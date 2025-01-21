@@ -28,13 +28,12 @@ public class TodoController {
 
     @PutMapping("/{id}")
     public Todo updateTodo(@PathVariable Long id, @RequestBody Todo updatedTodo) {
-        return todoRepository.findById(id)
-                .map(todo -> {
-                    todo.setCompleted(updatedTodo.isCompleted()); // 상태 업데이트
-                    todo.setTitle(updatedTodo.getTitle()); // 제목 업데이트 (필요 시)
-                    return todoRepository.save(todo);
-                })
-                .orElseThrow(() -> new RuntimeException("Todo not found with id " + id));
+        return todoRepository.findById(id).map(todo -> {
+            todo.setTitle(updatedTodo.getTitle());
+            todo.setDueDate(updatedTodo.getDueDate());
+            todo.setCompleted(updatedTodo.isCompleted());
+            return todoRepository.save(todo);
+        }).orElseThrow(() -> new IllegalArgumentException("Todo not found with id: " + id));
     }
 
     @DeleteMapping("/{id}")

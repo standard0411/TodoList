@@ -4,86 +4,297 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Todo List</title>
-    <script>
-        // API 호출 후 Todo 리스트를 갱신
-        async function fetchTodos() {
-            const response = await fetch('/api/todos'); // 서버에서 Todo 데이터 가져오기
-            const todos = await response.json(); // JSON 데이터를 파싱
-            const todoList = document.getElementById('todo-list');
-            todoList.innerHTML = ''; // 기존 리스트 초기화
-
-            todos.forEach(todo => {
-                const listItem = document.createElement('li');
-                listItem.textContent = todo.title + (todo.completed ? " (Completed)" : "");
-
-                // 삭제 버튼 추가
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = 'Delete';
-                deleteButton.onclick = () => deleteTodo(todo.id);
-
-                // 완료 상태 토글 버튼 추가
-                const toggleButton = document.createElement('button');
-                toggleButton.textContent = todo.completed ? 'Mark Incomplete' : 'Mark Complete';
-                toggleButton.onclick = () => toggleComplete(todo.id, todo.title, !todo.completed);
-
-                listItem.appendChild(deleteButton);
-                listItem.appendChild(toggleButton);
-                todoList.appendChild(listItem);
-            });
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+    <style>
+        .todo-header, .todo-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #ddd;
+            padding: 10px 0;
         }
 
-        // 새 Todo 추가
-        async function addTodo() {
-            const titleInput = document.getElementById('new-todo');
-            const title = titleInput.value.trim();
-            if (!title) {
-                alert('Please enter a title for the Todo!');
-                return;
-            }
-
-            await fetch('/api/todos', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, completed: false })
-            });
-
-            titleInput.value = ''; // 입력 필드 초기화
-            fetchTodos(); // Todo 리스트 갱신
+        .todo-header {
+            font-weight: bold;
         }
 
-        // Todo 삭제
-        async function deleteTodo(id) {
-            await fetch(`/api/todos/${id}`, { method: 'DELETE' });
-            fetchTodos(); // Todo 리스트 갱신
+        .todo-header div, .todo-item div {
+            flex: 1;
+            text-align: center;
         }
 
-        // Todo 완료 상태 토글
-        async function toggleComplete(id, title, completed) {
-            await fetch(`/api/todos/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, completed })
-            });
-            fetchTodos(); // Todo 리스트 갱신
+        .todo-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
         }
 
-        // 엔터 키 입력 처리
-        document.addEventListener('DOMContentLoaded', () => {
-            const titleInput = document.getElementById('new-todo');
-            titleInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') { // 엔터 키 확인
-                    addTodo();
-                }
-            });
+        button {
+            min-width: 80px;
+        }
 
-            fetchTodos(); // 초기 Todo 리스트 가져오기
-        });
-    </script>
+        #selected-date {
+            width: 75px;
+        }
+
+        .hidden {
+            visibility: hidden;
+        }
+
+        .completed-todo {
+            text-decoration: line-through;
+            color: gray;
+        }
+
+        .header-buttons {
+            visibility: hidden;
+        }
+
+        .todo-item:hover {
+            background-color: #e6f7ff;
+        }
+
+        ul {
+            margin: 0;
+            padding: 0;
+        }
+
+        .todo-container {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+            gap: 5px;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .pagination button {
+            min-width: 30px;
+            padding: 5px 10px;
+        }
+
+        .pagination .active {
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
 <h1>Todo List</h1>
+<div class="todo-container">
+    <input type="text" id="new-todo" placeholder="할 일을 입력하세요">
+    <input type="text" id="selected-date" placeholder="Pick a Date" readonly>
+    <button id="save-button" onclick="addOrUpdateTodo()">추가</button>
+</div>
+<div class="todo-header">
+    <div>할 일</div>
+    <div>기한</div>
+    <div class="header-buttons">버튼</div>
+</div>
 <ul id="todo-list"></ul>
-<input type="text" id="new-todo" placeholder="Enter a new Todo">
-<button onclick="addTodo()">Add Todo</button>
+<div class="pagination" id="pagination"></div>
+<script>
+    let editingTodoId = null;
+    let currentPage = 1;
+    const todosPerPage = 10;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const dateInput = document.getElementById('selected-date');
+        flatpickr(dateInput, {
+            enableTime: false,
+            dateFormat: "Y-m-d",
+            defaultDate: new Date()
+        });
+
+        const titleInput = document.getElementById('new-todo');
+        titleInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                document.getElementById('save-button').click();
+            }
+        });
+
+        fetchTodos();
+    });
+
+    async function fetchTodos() {
+        const response = await fetch('/api/todos');
+        const todos = await response.json();
+
+        todos.sort((a, b) => {
+            if (a.completed !== b.completed) return a.completed - b.completed;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return new Date(a.dueDate) - new Date(b.dueDate);
+        });
+
+        renderTodos(todos);
+        renderPagination(todos);
+    }
+
+    function renderTodos(todos) {
+        const todoList = document.getElementById('todo-list');
+        todoList.innerHTML = '';
+
+        const start = (currentPage - 1) * todosPerPage;
+        const end = start + todosPerPage;
+        const todosToShow = todos.slice(start, end);
+
+        todosToShow.forEach(todo => {
+            const listItem = document.createElement('li');
+            listItem.className = "todo-item";
+
+            const todoText = document.createElement('div');
+            todoText.textContent = todo.title;
+            if (todo.completed) {
+                todoText.classList.add('completed-todo');
+            }
+
+            const todoDate = document.createElement('div');
+            todoDate.textContent = todo.dueDate || 'No date';
+            if (todo.completed) {
+                todoDate.classList.add('completed-todo');
+            }
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'todo-buttons';
+
+            const completeButton = document.createElement('button');
+            completeButton.textContent = todo.completed ? '미완료' : '완료';
+            completeButton.onclick = () => toggleComplete(todo);
+
+            const editButton = document.createElement('button');
+            editButton.textContent = '수정';
+            editButton.onclick = () => startEditTodo(todo);
+            if (todo.completed) {
+                editButton.classList.add('hidden');
+            }
+
+            const deleteButton = document.createElement('button');
+            deleteButton.textContent = '삭제';
+            deleteButton.onclick = () => deleteTodo(todo.id);
+
+            buttonContainer.appendChild(editButton);
+            buttonContainer.appendChild(completeButton);
+            buttonContainer.appendChild(deleteButton);
+
+            listItem.appendChild(todoText);
+            listItem.appendChild(todoDate);
+            listItem.appendChild(buttonContainer);
+            todoList.appendChild(listItem);
+        });
+    }
+
+    function renderPagination(todos) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+
+    const totalPages = Math.ceil(todos.length / todosPerPage);
+    const pageGroupSize = 5; // 한 번에 보여줄 페이지 버튼 수
+    const currentGroup = Math.ceil(currentPage / pageGroupSize);
+
+    const startPage = (currentGroup - 1) * pageGroupSize + 1;
+    const endPage = Math.min(startPage + pageGroupSize - 1, totalPages);
+
+    if (startPage > 1) {
+        const prevGroupButton = document.createElement('button');
+        prevGroupButton.textContent = '←';
+        prevGroupButton.onclick = () => {
+            currentPage = startPage - 1;
+            renderTodos(todos);
+            renderPagination(todos);
+        };
+        pagination.appendChild(prevGroupButton);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const pageButton = document.createElement('button');
+        pageButton.textContent = i;
+        if (i === currentPage) {
+            pageButton.classList.add('active');
+        }
+        pageButton.onclick = () => {
+            currentPage = i;
+            renderTodos(todos);
+            renderPagination(todos);
+        };
+        pagination.appendChild(pageButton);
+    }
+
+    if (endPage < totalPages) {
+        const nextGroupButton = document.createElement('button');
+        nextGroupButton.textContent = '→';
+        nextGroupButton.onclick = () => {
+            currentPage = endPage + 1;
+            renderTodos(todos);
+            renderPagination(todos);
+        };
+        pagination.appendChild(nextGroupButton);
+    }
+}
+
+    async function addOrUpdateTodo() {
+        const titleInput = document.getElementById('new-todo');
+        const dateInput = document.getElementById('selected-date');
+        const title = titleInput.value.trim();
+        const dueDate = dateInput.value;
+
+        if (!title) {
+            alert('Please enter a title for the Todo!');
+            return;
+        }
+
+        if (editingTodoId) {
+            await fetch(`/api/todos/${editingTodoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, dueDate, completed: false })
+            });
+            editingTodoId = null;
+        } else {
+            await fetch('/api/todos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, dueDate, completed: false })
+            });
+        }
+
+        titleInput.value = '';
+        dateInput.value = new Date().toISOString().split('T')[0];
+        fetchTodos();
+    }
+
+    function startEditTodo(todo) {
+        const titleInput = document.getElementById('new-todo');
+        const dateInput = document.getElementById('selected-date');
+
+        titleInput.value = todo.title;
+        dateInput.value = todo.dueDate || '';
+        editingTodoId = todo.id;
+    }
+
+    async function toggleComplete(todo) {
+        await fetch(`/api/todos/${todo.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: todo.title,
+                dueDate: todo.dueDate,
+                completed: !todo.completed
+            })
+        });
+        fetchTodos();
+    }
+
+    async function deleteTodo(id) {
+        await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+        fetchTodos();
+    }
+</script>
 </body>
 </html>

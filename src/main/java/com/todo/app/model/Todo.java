@@ -20,4 +20,7 @@ public class Todo {
 
     @Column(nullable = false)
     private boolean completed;
+
+    @Column
+    private String dueDate; // 기한 날짜 (YYYY-MM-DD 포맷)
 }
