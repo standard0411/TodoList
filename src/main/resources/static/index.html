@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo List</title>
+    <script>
+        // API 호출 후 Todo 리스트를 갱신
+        async function fetchTodos() {
+            const response = await fetch('/api/todos'); // 서버에서 Todo 데이터 가져오기
+            const todos = await response.json(); // JSON 데이터를 파싱
+            const todoList = document.getElementById('todo-list');
+            todoList.innerHTML = ''; // 기존 리스트 초기화
+
+            todos.forEach(todo => {
+                const listItem = document.createElement('li');
+                listItem.textContent = todo.title + (todo.completed ? " (Completed)" : "");
+
+                // 삭제 버튼 추가
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.onclick = () => deleteTodo(todo.id);
+
+                // 완료 상태 토글 버튼 추가
+                const toggleButton = document.createElement('button');
+                toggleButton.textContent = todo.completed ? 'Mark Incomplete' : 'Mark Complete';
+                toggleButton.onclick = () => toggleComplete(todo.id, todo.title, !todo.completed);
+
+                listItem.appendChild(deleteButton);
+                listItem.appendChild(toggleButton);
+                todoList.appendChild(listItem);
+            });
+        }
+
+        // 새 Todo 추가
+        async function addTodo() {
+            const titleInput = document.getElementById('new-todo');
+            const title = titleInput.value.trim();
+            if (!title) {
+                alert('Please enter a title for the Todo!');
+                return;
+            }
+
+            await fetch('/api/todos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, completed: false })
+            });
+
+            titleInput.value = ''; // 입력 필드 초기화
+            fetchTodos(); // Todo 리스트 갱신
+        }
+
+        // Todo 삭제
+        async function deleteTodo(id) {
+            await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+            fetchTodos(); // Todo 리스트 갱신
+        }
+
+        // Todo 완료 상태 토글
+        async function toggleComplete(id, title, completed) {
+            await fetch(`/api/todos/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, completed })
+            });
+            fetchTodos(); // Todo 리스트 갱신
+        }
+
+        // 엔터 키 입력 처리
+        document.addEventListener('DOMContentLoaded', () => {
+            const titleInput = document.getElementById('new-todo');
+            titleInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') { // 엔터 키 확인
+                    addTodo();
+                }
+            });
+
+            fetchTodos(); // 초기 Todo 리스트 가져오기
+        });
+    </script>
+</head>
+<body>
+<h1>Todo List</h1>
+<ul id="todo-list"></ul>
+<input type="text" id="new-todo" placeholder="Enter a new Todo">
+<button onclick="addTodo()">Add Todo</button>
+</body>
+</html>
